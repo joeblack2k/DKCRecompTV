@@ -3,6 +3,7 @@ from pathlib import Path
 import plistlib
 import stat
 import subprocess
+import tempfile
 import unittest
 
 
@@ -40,10 +41,11 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "project(DKCRecompTV LANGUAGES OBJCXX)",
             "CMAKE_SYSTEM_NAME=tvOS",
             "DKC2_TVOS_CORE_ARCHIVE",
+            'set(DKC2_TVOS_CORE_FUNCTION "dkc2_game_core" CACHE STRING',
             "add_library(dkc2_tvos_core STATIC IMPORTED GLOBAL)",
             "IMPORTED_LOCATION",
             "DKCTVApp.mm",
-            "DKC_CORE_FUNCTION=dkc2_game_core",
+            "DKC_CORE_FUNCTION=${DKC2_TVOS_CORE_FUNCTION}",
             "dkc2_platform_constants.mm",
             "-Wl,-force_load,",
             "DKCTVShaders.metal",
@@ -55,6 +57,8 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "tv.nijssen.DKC2RecompTV",
             "PRODUCT_NAME",
             "DKC2 Recomp TV",
+            "DKC2_EXECUTABLE_NAME",
+            "OUTPUT_NAME",
             "MARKETING_VERSION",
             "CURRENT_PROJECT_VERSION",
             "17.0",
@@ -82,6 +86,11 @@ class TvOSBuildToolingTests(unittest.TestCase):
             f'EXPECTED_DEVELOPER_DIR="{DEVELOPER_DIR}"',
             "preflight.sh",
             "generate_snesrecomp.py",
+            "--core-archive",
+            "--core-function",
+            "--bundle-id",
+            "--product-name",
+            "--executable-name",
             'xcrun --sdk "$sdk" --find clang',
             'xcrun --sdk "$sdk" --find clang++',
             "-G Ninja",
@@ -93,6 +102,11 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "DKC2_BUILD_TVOS_CORE=ON",
             "dkc2_tvos_core",
             "DKC2_TVOS_CORE_ARCHIVE",
+            "DKC2_TVOS_CORE_FUNCTION",
+            "DKC2_BUNDLE_ID",
+            "DKC2_PRODUCT_NAME",
+            "DKC2_EXECUTABLE_NAME",
+            'app_path="$app_build/$executable_name.app"',
             "APP_PATH:",
         ):
             self.assertIn(required, self.build)
@@ -114,7 +128,8 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "CFBundleShortVersionString",
             "CFBundleVersion",
             "CFBundleSupportedPlatforms",
-            "dkc2_game_core",
+            "EXPECTED_CORE_SYMBOL",
+            "DKC2_TVOS_AUDIT_SYMBOL",
             "DKCGameViewController",
             "otool",
             "generated",
@@ -140,7 +155,11 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "preflight.sh",
             "Game.sfc",
             "appDataContainer",
-            "Library/Caches/DKCRecompTV/dkc2",
+            "DEFAULT_CORE_ID=\"dkc2\"",
+            "DEFAULT_DATA_ROOT=\"Library/Caches/DKCRecompTV\"",
+            "core_id=",
+            "data_root=",
+            "data_destination=\"$data_root/$core_id/Game.sfc\"",
             "remove-existing-content false",
             "device copy to",
             "device copy from",
@@ -157,6 +176,47 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "simctl launch",
         ):
             self.assertNotIn(forbidden, self.stage)
+
+    def test_stage_rejects_unsafe_core_ids_before_external_tools(self):
+        with tempfile.NamedTemporaryFile() as rom:
+            for core_id in (
+                "",
+                ".",
+                "..",
+                "../dkc3",
+                "dkc3/alt",
+                r"dkc3\alt",
+                "dkc 3",
+                "dkc3;rm",
+            ):
+                result = subprocess.run(
+                    [
+                        "sh",
+                        str(STAGE),
+                        rom.name,
+                        "device",
+                        "tv.nijssen.DKC2RecompTV",
+                        core_id,
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env={"PATH": ""},
+                    executable="/bin/sh",
+                )
+                self.assertEqual(result.returncode, 64, result.stdout)
+                self.assertIn("core ID", result.stdout)
+
+    def test_stage_keeps_dkc2_preflight_title_specific(self):
+        self.assertIn(
+            'if [ "$core_id" = "$DEFAULT_CORE_ID" ]; then',
+            self.stage,
+        )
+        self.assertIn('"$preflight" "$rom_path"', self.stage)
+        self.assertIn(
+            '[ -f "$rom_path" ] || die 3 "ROM file not found: $rom_path"',
+            self.stage,
+        )
 
     def test_existing_bundle_metadata_remains_placeholder_driven(self):
         with INFO.open("rb") as stream:

@@ -2,6 +2,7 @@
 set -eu
 
 EXPECTED_BUNDLE_ID="tv.nijssen.DKC2RecompTV"
+EXPECTED_PRODUCT_NAME="DKC2 Recomp TV"
 EXPECTED_VERSION="0.1.0"
 EXPECTED_BUILD="1"
 
@@ -13,16 +14,20 @@ die() {
 }
 
 usage() {
-    printf 'Usage: %s APP_PATH [appletvos|appletvsimulator]\n' "$0" >&2
+    printf 'Usage: %s APP_PATH [appletvos|appletvsimulator] [AUDIT_SYMBOL]\n' \
+        "$0" >&2
 }
 
-[ "$#" -ge 1 ] && [ "$#" -le 2 ] || {
+[ "$#" -ge 1 ] && [ "$#" -le 3 ] || {
     usage
-    die 64 "one app path and an optional SDK are required"
+    die 64 "app path, optional SDK, and optional audit symbol are required"
 }
 
 app_path=$1
 sdk=${2-}
+EXPECTED_BUNDLE_ID=${DKC2_BUNDLE_ID:-$EXPECTED_BUNDLE_ID}
+EXPECTED_PRODUCT_NAME=${DKC2_PRODUCT_NAME:-$EXPECTED_PRODUCT_NAME}
+EXPECTED_CORE_SYMBOL=${3:-${DKC2_TVOS_AUDIT_SYMBOL:-${DKC2_TVOS_CORE_FUNCTION:-dkc2_game_core}}}
 command -v lipo >/dev/null 2>&1 || die 2 "lipo is required"
 command -v vtool >/dev/null 2>&1 || die 2 "vtool is required"
 command -v nm >/dev/null 2>&1 || die 2 "nm is required"
@@ -38,6 +43,18 @@ case "$sdk" in
     *)
         usage
         die 64 "SDK must be appletvos or appletvsimulator: $sdk"
+        ;;
+esac
+case "$EXPECTED_BUNDLE_ID" in
+    ""|*[!A-Za-z0-9.-]*)
+        die 64 "bundle ID contains unsupported characters: $EXPECTED_BUNDLE_ID"
+        ;;
+esac
+[ -n "$EXPECTED_PRODUCT_NAME" ] ||
+    die 64 "product name must not be empty"
+case "$EXPECTED_CORE_SYMBOL" in
+    ""|[!A-Za-z_]*|*[!A-Za-z0-9_]*)
+        die 64 "audit symbol must be a C identifier: $EXPECTED_CORE_SYMBOL"
         ;;
 esac
 [ -d "$app_path" ] || die 3 "app bundle not found: $app_path"
@@ -74,9 +91,9 @@ device_family=$(plist_value UIDeviceFamily.0)
 [ "$bundle_id" = "$EXPECTED_BUNDLE_ID" ] ||
     die 4 "unexpected bundle identifier: $bundle_id"
 [ -n "$executable_name" ] || die 4 "CFBundleExecutable is missing"
-[ "$bundle_name" = "DKC2 Recomp TV" ] ||
+[ "$bundle_name" = "$EXPECTED_PRODUCT_NAME" ] ||
     die 4 "unexpected CFBundleName: $bundle_name"
-[ "$display_name" = "DKC2 Recomp TV" ] ||
+[ "$display_name" = "$EXPECTED_PRODUCT_NAME" ] ||
     die 4 "unexpected CFBundleDisplayName: $display_name"
 [ "$short_version" = "$EXPECTED_VERSION" ] ||
     die 4 "unexpected marketing version: $short_version"
@@ -136,8 +153,8 @@ printf '%s\n' "$arch_info" |
 symbols=$(nm "$executable" 2>/dev/null) ||
     die 4 "nm could not inspect the app executable"
 printf '%s\n' "$symbols" |
-    grep -Eq '(^|[[:space:]])_?dkc2_game_core([[:space:]]|$)' ||
-    die 4 "dkc2_game_core symbol is missing"
+    grep -Eq "(^|[[:space:]])_?${EXPECTED_CORE_SYMBOL}([[:space:]]|$)" ||
+    die 4 "$EXPECTED_CORE_SYMBOL symbol is missing"
 printf '%s\n' "$symbols" |
     grep -Eq '(^|[[:space:]])_?main([[:space:]]|$)' ||
     die 4 "host main symbol is missing"
@@ -184,5 +201,6 @@ printf 'PASS: tvOS app audit\n'
 printf 'PLATFORM: %s, minimum OS 17.0\n' "$expected_platform"
 printf 'ARCHITECTURE: arm64\n'
 printf 'BUNDLE: %s (%s %s)\n' "$bundle_id" "$short_version" "$build_version"
+printf 'CORE_SYMBOL: %s\n' "$EXPECTED_CORE_SYMBOL"
 printf 'RESOURCES: PrivacyInfo.xcprivacy default.metallib\n'
 printf 'SIGNATURE: not required\n'

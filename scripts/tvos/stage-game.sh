@@ -3,6 +3,8 @@ set -eu
 
 EXPECTED_DEVELOPER_DIR="/Applications/Xcode-27-beta-5.app/Contents/Developer"
 DEFAULT_BUNDLE_ID="tv.nijssen.DKC2RecompTV"
+DEFAULT_CORE_ID="dkc2"
+DEFAULT_DATA_ROOT="Library/Caches/DKCRecompTV"
 
 die() {
     status=$1
@@ -12,18 +14,20 @@ die() {
 }
 
 usage() {
-    printf 'Usage: DEVELOPER_DIR=%s %s ABSOLUTE_ROM_PATH DEVICE [BUNDLE_ID]\n' \
+    printf 'Usage: DEVELOPER_DIR=%s %s ABSOLUTE_ROM_PATH DEVICE [BUNDLE_ID [CORE_ID [DATA_ROOT]]]\n' \
         "$EXPECTED_DEVELOPER_DIR" "$0" >&2
 }
 
-[ "$#" -ge 2 ] && [ "$#" -le 3 ] || {
+[ "$#" -ge 2 ] && [ "$#" -le 5 ] || {
     usage
-    die 64 "absolute ROM path and device are required"
+    die 64 "ROM path, device, and optional title parameters are required"
 }
 
 rom_path=$1
 device=$2
-bundle_id=${3:-$DEFAULT_BUNDLE_ID}
+bundle_id=${3-${DKC2_BUNDLE_ID:-$DEFAULT_BUNDLE_ID}}
+core_id=${4-${DKC2_CORE_ID:-$DEFAULT_CORE_ID}}
+data_root=${5-${DKC2_DATA_ROOT:-$DEFAULT_DATA_ROOT}}
 case "$rom_path" in
     /*)
         ;;
@@ -35,6 +39,21 @@ esac
 case "$bundle_id" in
     ""|*[!A-Za-z0-9.-]*)
         die 64 "bundle ID contains unsupported characters"
+        ;;
+esac
+case "$core_id" in
+    ""|.|..|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
+        die 64 "core ID contains unsafe path characters: $core_id"
+        ;;
+esac
+case "$data_root" in
+    ""|/*|*[!A-Za-z0-9._/-]*|*//*)
+        die 64 "data root contains unsupported path characters"
+        ;;
+esac
+case "/$data_root/" in
+    */./*|*/../*)
+        die 64 "data root must not contain dot path components"
         ;;
 esac
 
@@ -55,7 +74,12 @@ preflight="$repo_root/scripts/tvos/preflight.sh"
 rom_path=$(realpath "$rom_path") ||
     die 3 "could not resolve ROM path"
 
-"$preflight" "$rom_path"
+if [ "$core_id" = "$DEFAULT_CORE_ID" ]; then
+    "$preflight" "$rom_path"
+else
+    [ -f "$rom_path" ] || die 3 "ROM file not found: $rom_path"
+    [ -r "$rom_path" ] || die 3 "ROM file is not readable: $rom_path"
+fi
 
 stage_dir=$(mktemp -d "${TMPDIR:-/tmp}/dkc2-stage.XXXXXX")
 trap 'rm -rf -- "$stage_dir"' EXIT
@@ -66,17 +90,18 @@ cp "$rom_path" "$overlay"
 
 expected_size=$(stat -f '%z' "$overlay")
 expected_sha=$(shasum -a 256 -- "$overlay" | awk '{print $1}')
+data_destination="$data_root/$core_id/Game.sfc"
 xcrun devicectl device copy to \
     --device "$device" \
     --source "$overlay" \
-    --destination "Library/Caches/DKCRecompTV/dkc2/Game.sfc" \
+    --destination "$data_destination" \
     --domain-type appDataContainer \
     --domain-identifier "$bundle_id" \
     --remove-existing-content false
 
 xcrun devicectl device copy from \
     --device "$device" \
-    --source "Library/Caches/DKCRecompTV/dkc2/Game.sfc" \
+    --source "$data_destination" \
     --destination "$readback" \
     --domain-type appDataContainer \
     --domain-identifier "$bundle_id"
@@ -93,6 +118,7 @@ cmp -s "$overlay" "$readback" ||
 
 printf 'PASS: staged Game.sfc into app data container\n'
 printf 'BUNDLE: %s\n' "$bundle_id"
-printf 'DESTINATION: Library/Caches/DKCRecompTV/dkc2/Game.sfc\n'
+printf 'CORE_ID: %s\n' "$core_id"
+printf 'DESTINATION: %s\n' "$data_destination"
 printf 'SIZE: %s bytes\n' "$actual_size"
 printf 'SHA-256: %s\n' "$actual_sha"

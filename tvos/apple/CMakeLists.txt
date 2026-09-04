@@ -17,14 +17,21 @@ set(DKC2_TVOS_SDK "appletvos" CACHE STRING
 set(DKC2_TVOS_SDK_PATH "" CACHE PATH
     "Absolute path to the selected Apple SDK")
 set(DKC2_TVOS_CORE_ARCHIVE "" CACHE FILEPATH
-    "Absolute path to the separately built dkc2_tvos_core archive")
+    "Absolute path to the separately built tvOS game-core archive")
+set(DKC2_TVOS_CORE_FUNCTION "dkc2_game_core" CACHE STRING
+    "C function returning the selected tvOS game core")
 set(DKC2_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." CACHE PATH
     "DKC2 source root used for include paths and compiler path maps")
-set(DKC2_BUNDLE_ID "tv.nijssen.DKC2RecompTV")
-set(DKC2_PRODUCT_NAME "DKC2 Recomp TV")
-set(DKC2_EXECUTABLE_NAME "DKCRecompTV")
-set(DKC2_MARKETING_VERSION "0.1.0")
-set(DKC2_BUILD_VERSION "1")
+set(DKC2_BUNDLE_ID "tv.nijssen.DKC2RecompTV" CACHE STRING
+    "Application bundle identifier")
+set(DKC2_PRODUCT_NAME "DKC2 Recomp TV" CACHE STRING
+    "Application product and bundle display name")
+set(DKC2_EXECUTABLE_NAME "DKCRecompTV" CACHE STRING
+    "Application executable and bundle name")
+set(DKC2_MARKETING_VERSION "0.1.0" CACHE STRING
+    "Application marketing version")
+set(DKC2_BUILD_VERSION "1" CACHE STRING
+    "Application build version")
 
 if(NOT DKC2_TVOS_SDK STREQUAL "appletvos" AND
    NOT DKC2_TVOS_SDK STREQUAL "appletvsimulator")
@@ -35,9 +42,25 @@ if(NOT DKC2_TVOS_CORE_ARCHIVE)
     message(FATAL_ERROR "DKC2_TVOS_CORE_ARCHIVE is required")
 endif()
 if(NOT IS_ABSOLUTE "${DKC2_TVOS_CORE_ARCHIVE}" OR
-   NOT EXISTS "${DKC2_TVOS_CORE_ARCHIVE}")
+   NOT EXISTS "${DKC2_TVOS_CORE_ARCHIVE}" OR
+   IS_DIRECTORY "${DKC2_TVOS_CORE_ARCHIVE}")
     message(FATAL_ERROR
-        "DKC2_TVOS_CORE_ARCHIVE must be an existing absolute path")
+        "DKC2_TVOS_CORE_ARCHIVE must be an existing absolute file")
+endif()
+if(NOT DKC2_TVOS_CORE_FUNCTION MATCHES "^[A-Za-z_][A-Za-z0-9_]*$")
+    message(FATAL_ERROR
+        "DKC2_TVOS_CORE_FUNCTION must be a C identifier")
+endif()
+if(NOT DKC2_BUNDLE_ID MATCHES "^[A-Za-z0-9.-]+$")
+    message(FATAL_ERROR
+        "DKC2_BUNDLE_ID contains unsupported characters")
+endif()
+if(NOT DKC2_PRODUCT_NAME)
+    message(FATAL_ERROR "DKC2_PRODUCT_NAME must not be empty")
+endif()
+if(NOT DKC2_EXECUTABLE_NAME MATCHES "^[A-Za-z0-9._-]+$")
+    message(FATAL_ERROR
+        "DKC2_EXECUTABLE_NAME must be a safe bundle name")
 endif()
 if(NOT DKC2_TVOS_SDK_PATH)
     execute_process(
@@ -159,7 +182,7 @@ target_include_directories(DKCRecompTV PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${DKC2_SOURCE_ROOT}/tvos/include")
 target_compile_definitions(DKCRecompTV PRIVATE
-    DKC_CORE_FUNCTION=dkc2_game_core)
+    DKC_CORE_FUNCTION=${DKC2_TVOS_CORE_FUNCTION})
 target_compile_options(DKCRecompTV PRIVATE
     "-fobjc-arc"
     "-ffile-prefix-map=${DKC2_SOURCE_ROOT}=."
