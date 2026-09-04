@@ -16,13 +16,9 @@
 #include <stdbool.h>
 #include <string.h>
 
-enum {
-  kDkc2ResetPc = 0x0083F7,
-  kDkc2NmiPc = 0x00F37D,
-};
-
 static bool s_cpu_initialized;
-static uint32_t s_resume_pc = kDkc2ResetPc;
+static uint32_t s_resume_pc;
+static uint32_t s_nmi_pc;
 static int s_last_lle_result = 1;
 static uint64_t s_next_frame_master;
 static bool s_widescreen_shadow_active;
@@ -312,7 +308,7 @@ static void Dkc2RunOneFrame(void) {
     g_snes->inNmi = true;
     cpu_push_interrupt_frame_at(&g_cpu, s_resume_pc);
     s_last_lle_result =
-        interp_bridge_run_until_quiescent(&g_cpu, kDkc2NmiPc);
+        interp_bridge_run_until_quiescent(&g_cpu, s_nmi_pc);
   } else {
     s_last_lle_result =
         interp_bridge_run_until_quiescent(&g_cpu, s_resume_pc);
@@ -381,9 +377,18 @@ static void Dkc2OnStateLoaded(uint32_t version) {
   Dkc2VideoSetTerrainReady(false);
 }
 
+static void Dkc2Initialize(void) {
+  const uint8_t *nmi_vector = SnesRomPtr(0x00FFEA);
+  const uint8_t *reset_vector = SnesRomPtr(0x00FFFC);
+  s_nmi_pc = (uint32_t)nmi_vector[0] |
+             ((uint32_t)nmi_vector[1] << 8);
+  s_resume_pc = (uint32_t)reset_vector[0] |
+                ((uint32_t)reset_vector[1] << 8);
+}
+
 static const RtlGameInfo kDkc2GameInfo = {
   .title = "dkc2",
-  .initialize = NULL,
+  .initialize = &Dkc2Initialize,
   .run_frame = &Dkc2RunOneFrame,
   .draw_ppu_frame = &Dkc2DrawPpuFrame,
   .save_name_prefix = "dkc2s",
