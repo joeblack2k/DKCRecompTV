@@ -16,6 +16,22 @@ REV1_SHA256 = (
 
 
 class TvOSCoreContractTests(unittest.TestCase):
+    def test_snesrecomp_reads_native_interrupt_vectors(self):
+        runtime = (ROOT / "runner" / "dkc2_game.c").read_text(encoding="utf-8")
+
+        for required in (
+            "SnesRomPtr(0x00FFEA)",
+            "SnesRomPtr(0x00FFFC)",
+            ".initialize = &Dkc2Initialize",
+            "s_nmi_pc =",
+            "s_resume_pc =",
+        ):
+            self.assertIn(required, runtime)
+        self.assertNotIn("kDkc2ResetPc", runtime)
+        self.assertNotIn("kDkc2NmiPc", runtime)
+        self.assertNotIn("0x0083F7", runtime)
+        self.assertNotIn("0x00F37D", runtime)
+
     def test_public_abi_metadata_and_rom_profiles(self):
         header = HEADER.read_text(encoding="utf-8")
         self.assertIn("#define DKC_GAME_CORE_ABI_VERSION 1u", header)
