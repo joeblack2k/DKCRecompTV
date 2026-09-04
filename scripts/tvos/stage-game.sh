@@ -69,14 +69,14 @@ expected_sha=$(shasum -a 256 -- "$overlay" | awk '{print $1}')
 xcrun devicectl device copy to \
     --device "$device" \
     --source "$overlay" \
-    --destination "Library/Application Support/DKCRecompTV/dkc2" \
+    --destination "Library/Caches/DKCRecompTV/dkc2/Game.sfc" \
     --domain-type appDataContainer \
     --domain-identifier "$bundle_id" \
     --remove-existing-content false
 
 xcrun devicectl device copy from \
     --device "$device" \
-    --source "Library/Application Support/DKCRecompTV/dkc2/Game.sfc" \
+    --source "Library/Caches/DKCRecompTV/dkc2/Game.sfc" \
     --destination "$readback" \
     --domain-type appDataContainer \
     --domain-identifier "$bundle_id"
@@ -93,6 +93,6 @@ cmp -s "$overlay" "$readback" ||
 
 printf 'PASS: staged Game.sfc into app data container\n'
 printf 'BUNDLE: %s\n' "$bundle_id"
-printf 'DESTINATION: Library/Application Support/DKCRecompTV/dkc2/Game.sfc\n'
+printf 'DESTINATION: Library/Caches/DKCRecompTV/dkc2/Game.sfc\n'
 printf 'SIZE: %s bytes\n' "$actual_size"
 printf 'SHA-256: %s\n' "$actual_sha"

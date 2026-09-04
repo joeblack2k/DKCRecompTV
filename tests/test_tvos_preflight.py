@@ -15,7 +15,7 @@ V10_SHA256 = "35421a9af9dd011b40b91f792192af9f99c93201d8d394026bdfb42cbf2d8633"
 REV1_SHA256 = "b79c2bb86f6fc76e1fc61c62fc16d51c664c381e58bc2933be643bbc4d8b610c"
 FORBIDDEN_TRACKED = re.compile(
     r"(^|/)(private|generated|src/gen|build(?:-[^/]*)?|DerivedData|versions)"
-    r"(/|$)|\.(?:rom|sfc|smc|swc|sav|srm|app|ipa|xcarchive|xcresult|dSYM)$",
+    r"/|\.(?:rom|sfc|smc|swc|sav|srm|app|ipa|xcarchive|xcresult|dSYM)$",
     re.IGNORECASE,
 )
 

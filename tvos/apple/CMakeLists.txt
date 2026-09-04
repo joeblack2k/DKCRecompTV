@@ -161,6 +161,7 @@ target_include_directories(DKCRecompTV PRIVATE
 target_compile_definitions(DKCRecompTV PRIVATE
     DKC_CORE_FUNCTION=dkc2_game_core)
 target_compile_options(DKCRecompTV PRIVATE
+    "-fobjc-arc"
     "-ffile-prefix-map=${DKC2_SOURCE_ROOT}=."
     "-fdebug-prefix-map=${DKC2_SOURCE_ROOT}=."
     "-fmacro-prefix-map=${DKC2_SOURCE_ROOT}=.")

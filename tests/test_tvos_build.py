@@ -58,6 +58,7 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "MARKETING_VERSION",
             "CURRENT_PROJECT_VERSION",
             "17.0",
+            "-fobjc-arc",
             "-ffile-prefix-map=",
             "-fdebug-prefix-map=",
         ):
@@ -139,7 +140,7 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "preflight.sh",
             "Game.sfc",
             "appDataContainer",
-            "Library/Application Support/DKCRecompTV/dkc2",
+            "Library/Caches/DKCRecompTV/dkc2",
             "remove-existing-content false",
             "device copy to",
             "device copy from",

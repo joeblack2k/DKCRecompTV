@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -22,12 +23,13 @@
 #define DKC_CORE_FUNCTION dkc2_game_core
 #endif
 
-extern "C" const DKCGameCoreV1 *DKC_CORE_FUNCTION(void);
+extern "C" const DKCGameCoreV2 *DKC_CORE_FUNCTION(void);
 
 namespace {
 
 constexpr double kSnesPixelAspect = 7.0 / 6.0;
 constexpr uint32_t kMaxGameFramesPerDisplay = 4;
+constexpr double kSaveCheckpointIntervalSeconds = 5.0;
 
 static NSString *DkcCoreString(const char *value) {
   if (!value)
@@ -141,10 +143,29 @@ static DKCControllerSample DkcSampleForGamepad(
   return sample;
 }
 
+static uint16_t DkcMaskForPressType(UIPressType type) {
+  switch (type) {
+  case UIPressTypeUpArrow:
+    return DKC_SNES_BUTTON_UP;
+  case UIPressTypeDownArrow:
+    return DKC_SNES_BUTTON_DOWN;
+  case UIPressTypeLeftArrow:
+    return DKC_SNES_BUTTON_LEFT;
+  case UIPressTypeRightArrow:
+    return DKC_SNES_BUTTON_RIGHT;
+  case UIPressTypeSelect:
+    return DKC_SNES_BUTTON_B;
+  case UIPressTypePlayPause:
+    return DKC_SNES_BUTTON_START;
+  default:
+    return 0;
+  }
+}
+
 } // namespace
 
 @interface DKCGameViewController : UIViewController <MTKViewDelegate> {
-  const DKCGameCoreV1 *core_;
+  const DKCGameCoreV2 *core_;
   const DKCGameCoreInfo *info_;
   DKCGameCoreInstance *instance_;
 
@@ -160,6 +181,8 @@ static DKCControllerSample DkcSampleForGamepad(
   NSData *romData_;
   NSString *romPath_;
   NSString *saveDirectoryPath_;
+  NSString *saveFilePath_;
+  NSString *saveDefaultsKey_;
   std::string saveDirectoryUTF8_;
   std::vector<uint8_t> framebuffer_;
   std::shared_ptr<DKCAudioRing> audioRing_;
@@ -170,11 +193,13 @@ static DKCControllerSample DkcSampleForGamepad(
   double nextFrameTime_;
   double audioFramesPerVideoFrame_;
   double audioFrameAccumulator_;
+  double lastSaveCheckpointTime_;
   bool booted_;
   bool suspended_;
   bool loggedFirstVideo_;
   bool loggedFirstAudio_;
   bool loggedAudioOverrun_;
+  uint16_t remoteMask_;
 }
 
 - (void)pauseForLifecycle;
@@ -184,6 +209,8 @@ static DKCControllerSample DkcSampleForGamepad(
 - (void)stopAudio;
 - (void)teardownAudio;
 - (BOOL)renderAudioForFrame;
+- (void)mirrorSram;
+- (void)checkpointSramAtTime:(double)now;
 - (uint32_t)controllerMaskForFrame;
 - (void)controllerDidConnect:(NSNotification *)notification;
 - (void)controllerDidDisconnect:(NSNotification *)notification;
@@ -212,6 +239,15 @@ static DKCControllerSample DkcSampleForGamepad(
   metalView_.frame = self.view.bounds;
 }
 
+- (BOOL)canBecomeFirstResponder {
+  return YES;
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  [self becomeFirstResponder];
+}
+
 - (void)showError:(NSString *)reason {
   [self teardownAudio];
   booted_ = false;
@@ -225,11 +261,15 @@ static DKCControllerSample DkcSampleForGamepad(
   }
 
   NSLog(@"DKCRecompTV boot failure: %@", reason ?: @"unknown error");
+  std::fprintf(stderr, "DKCRecompTV boot failure: %s\n",
+               reason.UTF8String ?: "unknown error");
   errorLabel_ = [[UILabel alloc] initWithFrame:CGRectZero];
-  errorLabel_.text = @"Unable to start game.";
+  errorLabel_.text =
+      [NSString stringWithFormat:@"Unable to start game.\n%@",
+                                 reason ?: @"Unknown error"];
   errorLabel_.textAlignment = NSTextAlignmentCenter;
   errorLabel_.textColor = UIColor.whiteColor;
-  errorLabel_.numberOfLines = 1;
+  errorLabel_.numberOfLines = 0;
   errorLabel_.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
   errorLabel_.translatesAutoresizingMaskIntoConstraints = NO;
   [self.view addSubview:errorLabel_];
@@ -251,9 +291,17 @@ static DKCControllerSample DkcSampleForGamepad(
 
 - (void)boot {
   core_ = DKC_CORE_FUNCTION();
-  if (!core_ || !core_->info || !core_->boot || !core_->run_frame ||
-      !core_->draw_frame || !core_->render_audio || !core_->suspend ||
-      !core_->resume) {
+  if (!core_) {
+    [self failWithReason:@"core ABI is unavailable"];
+    return;
+  }
+  if (core_->abi_version != DKC_GAME_CORE_ABI_VERSION) {
+    [self failWithReason:@"core ABI version is unsupported"];
+    return;
+  }
+  if (!core_->info || !core_->boot || !core_->run_frame ||
+      !core_->draw_frame || !core_->render_audio ||
+      !core_->checkpoint_save || !core_->suspend || !core_->resume) {
     [self failWithReason:@"core ABI is incomplete"];
     return;
   }
@@ -292,20 +340,24 @@ static DKCControllerSample DkcSampleForGamepad(
     return;
   }
 
-  NSString *applicationSupport =
-      NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,
+  NSString *caches =
+      NSSearchPathForDirectoriesInDomains(NSCachesDirectory,
                                           NSUserDomainMask, YES)
           .firstObject;
-  if (!applicationSupport.length) {
-    [self failWithReason:@"application support is unavailable"];
+  if (!caches.length) {
+    [self failWithReason:@"application storage is unavailable"];
     return;
   }
 
   NSString *coreDirectory =
-      [[applicationSupport stringByAppendingPathComponent:@"DKCRecompTV"]
+      [[caches stringByAppendingPathComponent:@"DKCRecompTV"]
           stringByAppendingPathComponent:coreID];
   romPath_ = [coreDirectory stringByAppendingPathComponent:@"Game.sfc"];
   saveDirectoryPath_ = [coreDirectory stringByAppendingPathComponent:@"Saves"];
+  saveFilePath_ =
+      [saveDirectoryPath_ stringByAppendingPathComponent:@"save.srm"];
+  saveDefaultsKey_ =
+      [NSString stringWithFormat:@"DKCRecompTV.%@.SRAM", coreID];
 
   NSError *fileError = nil;
   if (![[NSFileManager defaultManager]
@@ -316,6 +368,20 @@ static DKCControllerSample DkcSampleForGamepad(
     [self failWithReason:fileError.localizedDescription ?: @"save directory failed"];
     return;
   }
+
+  NSData *storedSram =
+      [[NSUserDefaults standardUserDefaults] dataForKey:saveDefaultsKey_];
+  if (storedSram.length > 0 &&
+      ![storedSram writeToFile:saveFilePath_
+                      options:NSDataWritingAtomic
+                        error:&fileError]) {
+    [self failWithReason:fileError.localizedDescription
+                             ?: @"saved game restore failed"];
+    return;
+  }
+  if (storedSram.length > 0)
+    NSLog(@"DKCRecompTV SRAM restored core=%s bytes=%llu",
+          info_->id ?: "unknown", (unsigned long long)storedSram.length);
 
   romData_ = [NSData dataWithContentsOfFile:romPath_ options:0 error:&fileError];
   if (!romData_ || romData_.length == 0) {
@@ -428,6 +494,7 @@ static DKCControllerSample DkcSampleForGamepad(
   audioFrameAccumulator_ = 0.0;
   booted_ = true;
   suspended_ = false;
+  lastSaveCheckpointTime_ = CACurrentMediaTime();
   NSLog(@"DKCRecompTV boot core=%s rom=Game.sfc saves=Saves",
         info_->id ?: "unknown");
 }
@@ -612,7 +679,7 @@ static DKCControllerSample DkcSampleForGamepad(
   /*
    * Honor Apple's explicit player assignment first. Unassigned extended
    * gamepads fill the remaining SNES ports in GCController's connection order.
-   */
+  */
   for (GCController *controller in controllers) {
     if (!controller.extendedGamepad)
       continue;
@@ -633,12 +700,14 @@ static DKCControllerSample DkcSampleForGamepad(
     else if (!selected[1])
       selected[1] = controller;
   }
-
   DKCControllerSample samples[2] = {
       DkcSampleForGamepad(selected[0] ? selected[0].extendedGamepad : nil),
       DkcSampleForGamepad(selected[1] ? selected[1].extendedGamepad : nil),
   };
-  return dkc_pack_controllers(samples, 2);
+  uint32_t mask = dkc_pack_controllers(samples, 2);
+  if (!selected[0])
+    mask |= remoteMask_;
+  return mask;
 }
 
 - (void)controllerDidConnect:(NSNotification *)notification {
@@ -651,6 +720,35 @@ static DKCControllerSample DkcSampleForGamepad(
   GCController *controller = (GCController *)notification.object;
   NSLog(@"DKCRecompTV controller disconnected profile=%s",
         controller.extendedGamepad ? "ExtendedGamepad" : "unsupported");
+}
+
+- (void)pressesBegan:(NSSet<UIPress *> *)presses
+           withEvent:(UIPressesEvent *)event {
+  bool handled = false;
+  for (UIPress *press in presses) {
+    const uint16_t mask = DkcMaskForPressType(press.type);
+    remoteMask_ |= mask;
+    handled = handled || mask != 0;
+  }
+  if (!handled)
+    [super pressesBegan:presses withEvent:event];
+}
+
+- (void)pressesEnded:(NSSet<UIPress *> *)presses
+           withEvent:(UIPressesEvent *)event {
+  bool handled = false;
+  for (UIPress *press in presses) {
+    const uint16_t mask = DkcMaskForPressType(press.type);
+    remoteMask_ &= static_cast<uint16_t>(~mask);
+    handled = handled || mask != 0;
+  }
+  if (!handled)
+    [super pressesEnded:presses withEvent:event];
+}
+
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses
+               withEvent:(UIPressesEvent *)event {
+  [self pressesEnded:presses withEvent:event];
 }
 
 - (void)uploadFramebuffer {
@@ -706,6 +804,8 @@ static DKCControllerSample DkcSampleForGamepad(
       NSLog(@"DKCRecompTV first active video core=%s", info_->id ?: "unknown");
     }
   }
+  if (now - lastSaveCheckpointTime_ >= kSaveCheckpointIntervalSeconds)
+    [self checkpointSramAtTime:now];
 
   MTLRenderPassDescriptor *renderPass = view.currentRenderPassDescriptor;
   id<CAMetalDrawable> drawable = view.currentDrawable;
@@ -735,6 +835,41 @@ static DKCControllerSample DkcSampleForGamepad(
   (void)size;
 }
 
+- (void)mirrorSram {
+  NSError *fileError = nil;
+  NSData *sram =
+      [NSData dataWithContentsOfFile:saveFilePath_
+                            options:0
+                              error:&fileError];
+  if (sram.length == 0) {
+    NSLog(@"DKCRecompTV SRAM mirror skipped core=%s error=%@",
+          info_->id ?: "unknown",
+          fileError.localizedDescription ?: @"save.srm is empty");
+    return;
+  }
+
+  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+  [defaults setObject:sram forKey:saveDefaultsKey_];
+  const BOOL flushed = [defaults synchronize];
+  if (!flushed)
+    NSLog(@"DKCRecompTV SRAM preferences flush failed core=%s",
+          info_->id ?: "unknown");
+  std::fprintf(stderr,
+               "DKCRecompTV SRAM mirrored core=%s bytes=%llu flushed=%s\n",
+               info_->id ?: "unknown", (unsigned long long)sram.length,
+               flushed ? "yes" : "no");
+}
+
+- (void)checkpointSramAtTime:(double)now {
+  lastSaveCheckpointTime_ = now;
+  const DKCGameCoreResult result = core_->checkpoint_save(instance_);
+  if (result == DKC_GAME_CORE_OK)
+    [self mirrorSram];
+  else
+    NSLog(@"DKCRecompTV SRAM checkpoint failed core=%s result=%s",
+          info_->id ?: "unknown", DkcResultDescription(result).UTF8String);
+}
+
 - (void)pauseForLifecycle {
   if (!booted_ || suspended_)
     return;
@@ -743,6 +878,8 @@ static DKCControllerSample DkcSampleForGamepad(
   [self stopAudio];
   nextFrameTime_ = 0.0;
   const DKCGameCoreResult result = core_->suspend(instance_);
+  if (result == DKC_GAME_CORE_OK)
+    [self mirrorSram];
   NSLog(@"DKCRecompTV suspend core=%s result=%s", info_->id ?: "unknown",
         DkcResultDescription(result).UTF8String);
 }

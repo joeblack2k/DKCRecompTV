@@ -79,6 +79,6 @@ int main() {
   second.connected = false;
   CHECK(dkc_map_controller(second) == 0);
   CHECK(dkc_pack_controllers(&second, 1) == 0);
-  static_assert(DKC_GAME_CORE_ABI_VERSION == 1u, "ABI version changed");
+  static_assert(DKC_GAME_CORE_ABI_VERSION == 2u, "ABI version changed");
   return 0;
 }

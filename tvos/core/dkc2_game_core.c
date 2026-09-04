@@ -152,11 +152,15 @@ static size_t render_audio(DKCGameCoreInstance *instance,
   return frames;
 }
 
-static DKCGameCoreResult suspend_core(DKCGameCoreInstance *instance) {
+static DKCGameCoreResult checkpoint_save(DKCGameCoreInstance *instance) {
   if (!valid_instance(instance))
     return DKC_GAME_CORE_NOT_BOOTED;
   RtlWriteSram();
   return DKC_GAME_CORE_OK;
+}
+
+static DKCGameCoreResult suspend_core(DKCGameCoreInstance *instance) {
+  return checkpoint_save(instance);
 }
 
 static DKCGameCoreResult resume_core(DKCGameCoreInstance *instance) {
@@ -164,17 +168,18 @@ static DKCGameCoreResult resume_core(DKCGameCoreInstance *instance) {
                                   : DKC_GAME_CORE_NOT_BOOTED;
 }
 
-static const DKCGameCoreV1 kDkc2Core = {
+static const DKCGameCoreV2 kDkc2Core = {
   .abi_version = DKC_GAME_CORE_ABI_VERSION,
   .info = &kDkc2Info,
   .boot = &boot_core,
   .run_frame = &run_frame,
   .draw_frame = &draw_frame,
   .render_audio = &render_audio,
+  .checkpoint_save = &checkpoint_save,
   .suspend = &suspend_core,
   .resume = &resume_core,
 };
 
-const DKCGameCoreV1 *dkc2_game_core(void) {
+const DKCGameCoreV2 *dkc2_game_core(void) {
   return &kDkc2Core;
 }

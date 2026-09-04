@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define DKC_GAME_CORE_ABI_VERSION 1u
+#define DKC_GAME_CORE_ABI_VERSION 2u
 
 typedef enum DKCGameCorePixelFormat {
   DKC_GAME_CORE_PIXEL_FORMAT_BGRA8 = 1u,
@@ -78,7 +78,7 @@ typedef struct DKCGameCoreBootConfig {
 
 typedef struct DKCGameCoreInstance DKCGameCoreInstance;
 
-typedef struct DKCGameCoreV1 {
+typedef struct DKCGameCoreV2 {
   uint32_t abi_version;
   const DKCGameCoreInfo *info;
   DKCGameCoreResult (*boot)(const DKCGameCoreBootConfig *config,
@@ -91,18 +91,19 @@ typedef struct DKCGameCoreV1 {
   size_t (*render_audio)(DKCGameCoreInstance *instance,
                          int16_t *pcm,
                          size_t frames);
+  DKCGameCoreResult (*checkpoint_save)(DKCGameCoreInstance *instance);
   DKCGameCoreResult (*suspend)(DKCGameCoreInstance *instance);
   DKCGameCoreResult (*resume)(DKCGameCoreInstance *instance);
-} DKCGameCoreV1;
+} DKCGameCoreV2;
 
 /*
- * v1 deliberately has no shutdown callback. The shared runner owns global
+ * v2 deliberately has no shutdown callback. The shared runner owns global
  * state and snes_free does not clear every global bridge pointer. The host
- * must treat a booted core as process-lifetime; suspend flushes SRAM only.
+ * must treat a booted core as process-lifetime.
  * Calls are serialized by the caller. Threading and audio buffering belong
  * to the host.
  */
-const DKCGameCoreV1 *dkc2_game_core(void);
+const DKCGameCoreV2 *dkc2_game_core(void);
 
 #ifdef __cplusplus
 }

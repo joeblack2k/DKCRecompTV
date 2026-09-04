@@ -73,28 +73,56 @@ class TvOSAppleHostTests(unittest.TestCase):
         for required in (
             "#ifndef DKC_CORE_FUNCTION",
             "#define DKC_CORE_FUNCTION dkc2_game_core",
-            "extern \"C\" const DKCGameCoreV1 *DKC_CORE_FUNCTION(void);",
+            "extern \"C\" const DKCGameCoreV2 *DKC_CORE_FUNCTION(void);",
             "core_ = DKC_CORE_FUNCTION();",
             "DKC_GAME_CORE_ABI_VERSION",
             "DKC_GAME_CORE_PIXEL_FORMAT_BGRA8",
             "DKCGameCoreInstance *instance_",
         ):
             self.assertIn(required, self.host)
+        version_check = self.host.index(
+            "core_->abi_version != DKC_GAME_CORE_ABI_VERSION"
+        )
+        callback_check = self.host.index("!core_->info")
+        self.assertLess(version_check, callback_check)
 
     def test_private_rom_and_sibling_saves(self):
         for required in (
-            "NSApplicationSupportDirectory",
+            "NSCachesDirectory",
             "DKCRecompTV",
             "stringByAppendingPathComponent:coreID",
             "stringByAppendingPathComponent:@\"Game.sfc\"",
             "stringByAppendingPathComponent:@\"Saves\"",
+            "stringByAppendingPathComponent:@\"save.srm\"",
+            '[NSString stringWithFormat:@"DKCRecompTV.%@.SRAM", coreID]',
             "createDirectoryAtPath:saveDirectoryPath_",
+            "dataForKey:saveDefaultsKey_",
+            "writeToFile:saveFilePath_",
+            "options:NSDataWritingAtomic",
             "dataWithContentsOfFile:romPath_",
             "bootConfig.save_directory",
         ):
             self.assertIn(required, self.host)
+        restore = self.host.index("dataForKey:saveDefaultsKey_")
+        restore_write = self.host.index("writeToFile:saveFilePath_")
+        boot = self.host.index("core_->boot(&bootConfig")
+        self.assertLess(restore, restore_write)
+        self.assertLess(restore_write, boot)
+
+        mirror_read = self.host.index("dataWithContentsOfFile:saveFilePath_")
+        mirror_write = self.host.index("setObject:sram", mirror_read)
+        mirror_flush = self.host.index("[defaults synchronize]", mirror_write)
+        self.assertLess(mirror_read, mirror_write)
+        self.assertLess(mirror_write, mirror_flush)
+        suspend = self.host.index("core_->suspend(instance_)")
+        suspend_mirror = self.host.index("[self mirrorSram]", suspend)
+        self.assertLess(suspend, suspend_mirror)
+        self.assertIn("core_->checkpoint_save(instance_)", self.host)
+        self.assertIn("kSaveCheckpointIntervalSeconds", self.host)
+        self.assertIn("if (sram.length == 0)", self.host)
         self.assertNotIn("pathForResource:", self.host)
         self.assertNotIn("NSBundle", self.host)
+        self.assertNotIn("NSApplicationSupportDirectory", self.host)
 
     def test_metal_frame_path_and_core_cadence(self):
         for required in (
@@ -230,6 +258,14 @@ class TvOSAppleHostTests(unittest.TestCase):
             '#import <GameController/GameController.h>',
             "GCControllerDidConnectNotification",
             "GCControllerDidDisconnectNotification",
+            "DkcMaskForPressType",
+            "UIPressTypeSelect",
+            "UIPressTypePlayPause",
+            "pressesBegan",
+            "pressesEnded",
+            "remoteMask_",
+            "canBecomeFirstResponder",
+            "becomeFirstResponder",
             "[GCController controllers]",
             "playerIndex",
             "GCControllerPlayerIndex1",
@@ -262,7 +298,7 @@ class TvOSAppleHostTests(unittest.TestCase):
 
     def test_lifecycle_and_first_screen_behavior(self):
         for required in (
-            'errorLabel_.text = @"Unable to start game."',
+            '[NSString stringWithFormat:@"Unable to start game.\\n%@"',
             "errorLabel_.textAlignment = NSTextAlignmentCenter",
             "sceneWillResignActive",
             "sceneDidEnterBackground",
