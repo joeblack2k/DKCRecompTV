@@ -73,6 +73,6 @@ class DKCSpscRing {
   alignas(64) std::atomic<std::size_t> read_index_{0};
 };
 
-using DKCAudioRing = DKCSpscRing<DKCFloatStereoFrame, 1024>;
+using DKCAudioRing = DKCSpscRing<DKCFloatStereoFrame, 4096>;
 
 #endif

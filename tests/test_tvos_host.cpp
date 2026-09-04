@@ -27,6 +27,18 @@ int main() {
   CHECK(ring.pop(popped) && popped[0].left == 1.0f);
   CHECK(!ring.pop(popped));
 
+  static_assert(DKCAudioRing::capacity() >= 2048,
+                "tvOS audio ring must absorb at least two frame bursts");
+  DKCAudioRing audio_ring;
+  DKCFloatStereoFrame audio_batch[534] = {};
+  for (std::size_t i = 0; i < 534; ++i) {
+    audio_batch[i].left = static_cast<float>(i);
+    audio_batch[i].right = -static_cast<float>(i);
+  }
+  CHECK(audio_ring.push(audio_batch, 534) == 534);
+  CHECK(audio_ring.push(audio_batch, 534) == 534);
+  CHECK(audio_ring.readable() == 1068);
+
   DKCControllerSample first;
   first.connected = true;
   first.apple_a = true;
