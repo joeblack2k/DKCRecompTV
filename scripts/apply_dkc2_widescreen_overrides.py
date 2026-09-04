@@ -33,22 +33,34 @@ def add_include(text: str) -> str:
     return text.replace(marker, marker + "\n" + INCLUDE, 1)
 
 
-def wrap_single_read(text: str, address: str, helper: str) -> str:
-    already = re.compile(
-        rf"{helper}\(\s*cpu_read16\([^;\n]*{address}[^;\n]*\)\s*\)")
+def wrap_single_read(
+        text: str, addresses: tuple[str, ...],
+        helper: str) -> tuple[str, str]:
+    alternatives = "|".join(re.escape(address) for address in addresses)
+    read = rf"cpu_read16\([^;\n]*(?:{alternatives})[^;\n]*\)"
+    reads = re.findall(read, text)
+    if len(reads) != 1:
+        raise ValueError(
+            f"expected one read from {addresses} for {helper}; "
+            f"found {len(reads)}")
+    selected = [address for address in addresses if address in reads[0]]
+    if len(selected) != 1:
+        raise ValueError(f"ambiguous address for {helper}")
+
+    already = re.compile(rf"{helper}\(\s*{read}\s*\)")
     if len(already.findall(text)) == 1:
-        return text
+        return text, selected[0]
     if already.search(text):
         raise ValueError(f"ambiguous existing {helper} adaptation")
 
     pattern = re.compile(
-        rf"(uint16\s+\w+\s*=\s*)(cpu_read16\([^;\n]*{address}[^;\n]*\))"
-        rf"(;)")
+        rf"(uint16\s+\w+\s*=\s*)({read})(;)")
     text, count = pattern.subn(rf"\1{helper}(\2)\3", text)
     if count != 1:
         raise ValueError(
-            f"expected one read from {address} for {helper}; found {count}")
-    return text
+            f"expected one assignable read from {addresses} for {helper}; "
+            f"found {count}")
+    return text, selected[0]
 
 
 def adapt_trace_block(
@@ -137,14 +149,29 @@ def adapt_nth_accumulator_write(
 def apply_overrides(generated_dir: Path) -> list[Path]:
     radius_path = find_unit(
         generated_dir, "check_placement_spawning_radius_M0X0")
+    radius = add_include(radius_path.read_text(encoding="utf-8"))
+    radius, left_address = wrap_single_read(
+        radius, ("0xbbb92f", "0xbbb93c"), "Dkc2VideoExpandCullLeft")
+    radius, span_address = wrap_single_read(
+        radius, ("0xbbb931", "0xbbb93e"), "Dkc2VideoExpandCullSpan")
+    if (left_address, span_address) == ("0xbbb92f", "0xbbb931"):
+        rev1 = False
+    elif (left_address, span_address) == ("0xbbb93c", "0xbbb93e"):
+        rev1 = True
+    else:
+        raise ValueError("mixed DKC2 radius-table profiles")
+
     renderer_path = find_unit(
         generated_dir, "render_world_sprites_CODE_B59F40_M0X0")
     banana_index_path = find_unit(
-        generated_dir, "update_banana_visibility_CODE_B5F3E9_M0X0")
+        generated_dir, "bank_B5_F3E9_M0X0" if rev1 else
+        "update_banana_visibility_CODE_B5F3E9_M0X0")
     banana_renderer_path = find_unit(
-        generated_dir, "prepare_banana_render_bounds_CODE_B5F540_M0X0")
+        generated_dir, "bank_B5_F540_M0X0" if rev1 else
+        "prepare_banana_render_bounds_CODE_B5F540_M0X0")
     banana_clip_path = find_unit(
-        generated_dir, "render_banana_tiles_CODE_B5F5E1_M0X0")
+        generated_dir, "bank_B5_F5E1_M0X0" if rev1 else
+        "render_banana_tiles_CODE_B5F5E1_M0X0")
     despawn_path = find_unit(generated_dir, "CODE_B59C52_M0X0")
 
     paths = {
@@ -159,12 +186,6 @@ def apply_overrides(generated_dir: Path) -> list[Path]:
         path: add_include(path.read_text(encoding="utf-8"))
         for path in paths
     }
-
-    radius = sources[radius_path]
-    radius = wrap_single_read(
-        radius, "0xbbb92f", "Dkc2VideoExpandCullLeft")
-    radius = wrap_single_read(
-        radius, "0xbbb931", "Dkc2VideoExpandCullSpan")
     sources[radius_path] = radius
 
     renderer = sources[renderer_path]
@@ -176,31 +197,45 @@ def apply_overrides(generated_dir: Path) -> list[Path]:
 
     banana_index = sources[banana_index_path]
     banana_index = adapt_constant_block(
-        banana_index, "L_F3C5_M0X0:", "L_F3CE_M0X0:",
+        banana_index,
+        "L_F3E9_M0X0:" if rev1 else "L_F3C5_M0X0:",
+        "L_F3F2_M0X0:" if rev1 else "L_F3CE_M0X0:",
         "0x107", "Dkc2VideoExpandCullLeft")
     sources[banana_index_path] = banana_index
 
     banana_renderer = sources[banana_renderer_path]
     banana_renderer = adapt_constant_block(
-        banana_renderer, "L_F51C_M0X0:", "L_F534_M0X0:",
+        banana_renderer,
+        "L_F540_M0X0:" if rev1 else "L_F51C_M0X0:",
+        "L_F558_M0X0:" if rev1 else "L_F534_M0X0:",
         "0x100", "Dkc2VideoExpandCullLeft")
     banana_renderer = adapt_constant_block(
-        banana_renderer, "L_F545_M0X0:", "L_F54E_M0X0:",
+        banana_renderer,
+        "L_F569_M0X0:" if rev1 else "L_F545_M0X0:",
+        "L_F572_M0X0:" if rev1 else "L_F54E_M0X0:",
         "0x10f", "Dkc2VideoExpandCullSpan")
     sources[banana_renderer_path] = banana_renderer
 
     banana_clip = sources[banana_clip_path]
     banana_clip = adapt_constant_block(
-        banana_clip, "L_F5F4_M0X0:", "L_F5F9_M0X0:",
+        banana_clip,
+        "L_F618_M0X0:" if rev1 else "L_F5F4_M0X0:",
+        "L_F61D_M0X0:" if rev1 else "L_F5F9_M0X0:",
         "0xf", "Dkc2VideoExpandCullLeft")
     banana_clip = adapt_constant_block(
-        banana_clip, "L_F61B_M0X0:", "L_F62B_M0X0:",
+        banana_clip,
+        "L_F63F_M0X0:" if rev1 else "L_F61B_M0X0:",
+        "L_F64F_M0X0:" if rev1 else "L_F62B_M0X0:",
         "0x107", "Dkc2VideoExpandCullLeft")
     banana_clip = adapt_nth_accumulator_write(
-        banana_clip, "L_F672_M0X1:", "L_F6A4_M1X1:", 1,
+        banana_clip,
+        "L_F696_M0X1:" if rev1 else "L_F672_M0X1:",
+        "L_F6C8_M1X1:" if rev1 else "L_F6A4_M1X1:", 1,
         "Dkc2VideoPromoteOamXHigh")
     banana_clip = adapt_nth_accumulator_write(
-        banana_clip, "L_F6D5_M0X1:", "L_F707_M1X1:", 1,
+        banana_clip,
+        "L_F6F9_M0X1:" if rev1 else "L_F6D5_M0X1:",
+        "L_F72B_M1X1:" if rev1 else "L_F707_M1X1:", 1,
         "Dkc2VideoPromoteOamXHigh")
     sources[banana_clip_path] = banana_clip
 

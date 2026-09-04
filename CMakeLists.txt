@@ -3,15 +3,19 @@ cmake_minimum_required(VERSION 3.20)
 project(dkc2_port
     VERSION 0.0.5
     DESCRIPTION "Native PC recompilation of Donkey Kong Country 2"
-    LANGUAGES C)
+    LANGUAGES C CXX)
 
 include(CTest)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DKC2_ROM "" CACHE FILEPATH "Private path to a headerless DKC2 USA v1.0 ROM")
+set(DKC2_ROM "" CACHE FILEPATH
+    "Private path to a headerless DKC2 USA v1.0 or Rev 1 ROM")
 set(DKC2_STATE_CORPUS "" CACHE PATH
     "Private directory of preserved DKC2 save states for the widescreen corpus check")
 set(DKC2_PIRATE_PANIC_INPUT "" CACHE FILEPATH
@@ -32,6 +36,8 @@ option(DKC2_BUILD_SNESRECOMP
     "Build the experimental snesrecomp headless and desktop runners" OFF)
 option(DKC2_BUILD_SNESRECOMP_HEADLESS
     "Deprecated alias for DKC2_BUILD_SNESRECOMP" OFF)
+option(DKC2_BUILD_TVOS_CORE
+    "Build the SDL-free DKC2 game core for Apple tvOS" OFF)
 option(DKC2_FETCH_SDL2
     "Fetch the pinned SDL2 source when no system package is available" ON)
 if(DKC2_BUILD_SNESRECOMP_HEADLESS)
@@ -162,6 +168,11 @@ if(DKC2_BUILD_SNESRECOMP)
         message(FATAL_ERROR
             "No private generated sources found; run scripts/generate_snesrecomp.py "
             "or scripts/generate_snesrecomp.ps1 first")
+    endif()
+    if(NOT EXISTS "${DKC2_SNESRECOMP_GEN_DIR}/dkc2_rom_profile.c")
+        message(FATAL_ERROR
+            "Generated sources are missing dkc2_rom_profile.c; regenerate the "
+            "AOT tree for the selected ROM profile")
     endif()
     # These project-owned hosts have no SDL dependency or event thread. Keep
     # the portable snesrecomp runtime while providing their small host adapters.
@@ -585,7 +596,123 @@ if(DKC2_BUILD_SNESRECOMP)
     endif()
 endif()
 
+if(DKC2_BUILD_TVOS_CORE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+        message(FATAL_ERROR
+            "DKC2_BUILD_TVOS_CORE requires CMAKE_SYSTEM_NAME=tvOS")
+    endif()
+    if(NOT DEFINED SNESRECOMP_ROOT)
+        set(SNESRECOMP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp)
+    endif()
+    set(DKC2_SNESRECOMP_GEN_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/generated/snesrecomp" CACHE PATH
+        "Directory containing private generated snesrecomp C sources")
+    if(NOT EXISTS "${SNESRECOMP_ROOT}/runner/runner.cmake")
+        message(FATAL_ERROR
+            "snesrecomp is not initialized; run git submodule update --init --recursive")
+    endif()
+    include(${SNESRECOMP_ROOT}/runner/runner.cmake)
+    file(GLOB DKC2_TVOS_CORE_GEN_SOURCES CONFIGURE_DEPENDS
+        "${DKC2_SNESRECOMP_GEN_DIR}/*.c")
+    if(NOT DKC2_TVOS_CORE_GEN_SOURCES)
+        message(FATAL_ERROR
+            "No private generated sources found; run scripts/generate_snesrecomp.py")
+    endif()
+    if(NOT EXISTS "${DKC2_SNESRECOMP_GEN_DIR}/dkc2_rom_profile.c")
+        message(FATAL_ERROR
+            "Generated sources are missing dkc2_rom_profile.c; regenerate the "
+            "AOT tree for the selected ROM profile")
+    endif()
+
+    add_library(dkc2_tvos_core STATIC
+        ${SNESRECOMP_ROOT}/runner/src/common_cpu_infra.c
+        ${SNESRECOMP_ROOT}/runner/src/common_rtl.c
+        ${SNESRECOMP_ROOT}/runner/src/widescreen.c
+        ${SNESRECOMP_ROOT}/runner/src/recomp_hw.c
+        ${SNESRECOMP_ROOT}/runner/src/framedump.c
+        ${SNESRECOMP_ROOT}/runner/src/cpu_state.c
+        ${SNESRECOMP_ROOT}/runner/src/cpu_trace.c
+        ${SNESRECOMP_ROOT}/runner/src/audio_trace.c
+        ${SNESRECOMP_ROOT}/runner/src/ppu_dma_trace.c
+        ${SNESRECOMP_ROOT}/runner/src/util.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/apu.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/cart.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/cpu.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/dma.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/dsp.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/dsp1.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/dsp1_hle.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/joypad.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/audio_shadow.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/dsp_shadow.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/msu1.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/color_lut.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/ppu.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/ppu_legacy.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/sa1.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/ws_shadow.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/snes.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/snes_other.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/spc.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/superfx.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/interp816.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/tier2_capture.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/interp_bridge.c
+        ${SNESRECOMP_ROOT}/runner/src/snes/cx4.c
+        ${SNESRECOMP_ROOT}/runner/src/sha256.c
+        ${DKC2_TVOS_CORE_GEN_SOURCES}
+        runner/dkc2_game.c
+        runner/dkc2_video.c
+        runner/dkc2_hdma.c
+        runner/headless_host.c
+        runner/verified_rom.c
+        tvos/core/dkc2_game_core.c)
+    target_include_directories(dkc2_tvos_core
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/tvos/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/runner
+            ${CMAKE_CURRENT_SOURCE_DIR}/recomp
+            ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
+    target_compile_definitions(dkc2_tvos_core PRIVATE
+        SNESRECOMP_TRACE=0
+        SNESRECOMP_REVERSE_DEBUG=0
+        SNESRECOMP_EXTERNAL_RAM_ROUTINE_GUARDS=1
+        SYSTEM_VOLUME_MIXER_AVAILABLE=0)
+    target_link_libraries(dkc2_tvos_core PRIVATE
+        ${SNESRECOMP_RUNNER_LIBRARIES})
+    dkc2_enable_project_warnings(dkc2_tvos_core)
+    dkc2_enable_release_optimization(dkc2_tvos_core)
+endif()
+
 if(BUILD_TESTING)
+    if(NOT DEFINED SNESRECOMP_ROOT)
+        set(SNESRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp")
+    endif()
+
+    add_executable(tvos_host_contract
+        tests/test_tvos_host.cpp)
+    target_include_directories(tvos_host_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tvos/apple
+        ${CMAKE_CURRENT_SOURCE_DIR}/tvos/include)
+    dkc2_enable_project_warnings(tvos_host_contract)
+    add_test(NAME tvos_host_contract COMMAND tvos_host_contract)
+    set_tests_properties(tvos_host_contract PROPERTIES
+        LABELS "unit;portable;tvos")
+
+    add_executable(test_verified_rom
+        tests/test_verified_rom.c
+        runner/verified_rom.c
+        ${SNESRECOMP_ROOT}/runner/src/sha256.c)
+    target_include_directories(test_verified_rom PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner
+        ${SNESRECOMP_ROOT}/runner/src)
+    dkc2_enable_project_warnings(test_verified_rom)
+    add_test(NAME verified_rom
+        COMMAND test_verified_rom)
+    set_tests_properties(verified_rom PROPERTIES
+        LABELS "unit;native;rom")
+
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME audio_pcm_compare
@@ -603,6 +730,11 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_generate_snesrecomp.py)
         set_tests_properties(generate_snesrecomp_script PROPERTIES
             LABELS "unit;tooling;portable")
+        add_test(NAME tvos_core_contract
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tvos_core.py)
+        set_tests_properties(tvos_core_contract PROPERTIES
+            LABELS "unit;tooling;tvos;portable")
         add_test(NAME dkc2_swanky_static_entries
             COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_swanky_static_entries.py)

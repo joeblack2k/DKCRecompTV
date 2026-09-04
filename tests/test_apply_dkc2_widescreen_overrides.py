@@ -21,6 +21,14 @@ RecompReturn check_placement_spawning_radius_M0X0(CpuState *cpu) {
 }
 """
 
+REV1_RADIUS_FIXTURE = """\
+#include "funcs.h"
+RecompReturn check_placement_spawning_radius_M0X0(CpuState *cpu) {
+  uint16 left = cpu_read16(cpu, 0, (uint16)(0xbbb93c + cpu->X));
+  uint16 span = cpu_read16(cpu, 0, (uint16)(0xbbb93e + cpu->X));
+}
+"""
+
 RENDER_FIXTURE = """\
 #include "funcs.h"
 RecompReturn render_world_sprites_CODE_B59F40_M0X0(CpuState *cpu) {
@@ -190,6 +198,64 @@ class WidescreenOverrideTests(unittest.TestCase):
                 RENDER_FIXTURE.replace("0x160", "0x161", 1),
                 encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "native cull constant"):
+                MODULE.apply_overrides(generated)
+
+    def test_accepts_rev1_radius_table_addresses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generated = self.make_generated_dir(Path(directory))
+            (generated / "radius.c").write_text(
+                REV1_RADIUS_FIXTURE, encoding="utf-8")
+            (generated / "banana_index.c").write_text(
+                BANANA_INDEX_FIXTURE
+                .replace("update_banana_visibility_CODE_B5F3E9",
+                         "bank_B5_F3E9")
+                .replace("L_F3C5", "L_F3E9")
+                .replace("L_F3CE", "L_F3F2"),
+                encoding="utf-8")
+            (generated / "banana_renderer.c").write_text(
+                BANANA_RENDER_FIXTURE
+                .replace("prepare_banana_render_bounds_CODE_B5F540",
+                         "bank_B5_F540")
+                .replace("L_F51C", "L_F540")
+                .replace("L_F534", "L_F558")
+                .replace("L_F545", "L_F569")
+                .replace("L_F54E", "L_F572"),
+                encoding="utf-8")
+            (generated / "banana_clip.c").write_text(
+                BANANA_CLIP_FIXTURE
+                .replace("render_banana_tiles_CODE_B5F5E1",
+                         "bank_B5_F5E1")
+                .replace("L_F5F4", "L_F618")
+                .replace("L_F5F9", "L_F61D")
+                .replace("L_F61B", "L_F63F")
+                .replace("L_F62B", "L_F64F")
+                .replace("L_F672", "L_F696")
+                .replace("L_F6A4", "L_F6C8")
+                .replace("L_F6D5", "L_F6F9")
+                .replace("L_F707", "L_F72B"),
+                encoding="utf-8")
+            MODULE.apply_overrides(generated)
+            radius = (generated / "radius.c").read_text(encoding="utf-8")
+            self.assertIn(
+                "Dkc2VideoExpandCullLeft(cpu_read16"
+                "(cpu, 0, (uint16)(0xbbb93c + cpu->X)))",
+                radius)
+            self.assertIn(
+                "Dkc2VideoExpandCullSpan(cpu_read16"
+                "(cpu, 0, (uint16)(0xbbb93e + cpu->X)))",
+                radius)
+
+    def test_fails_closed_when_radius_profile_is_ambiguous(self):
+        with tempfile.TemporaryDirectory() as directory:
+            generated = self.make_generated_dir(Path(directory))
+            ambiguous = RADIUS_FIXTURE.replace(
+                "  uint16 span =",
+                "  uint16 alternate_left = cpu_read16("
+                "cpu, 0, (uint16)(0xbbb93c + cpu->X));\n"
+                "  uint16 span =")
+            (generated / "radius.c").write_text(
+                ambiguous, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "found 2"):
                 MODULE.apply_overrides(generated)
 
 

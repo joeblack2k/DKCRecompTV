@@ -53,3 +53,20 @@ tier2_coverage.json
 # alongside the legacy fixed name.
 tier2_*.json
 tier2_*.jsonl
+
+# Private Apple platform build, archive, and signing output.
+/DerivedData/
+/tvos/build/
+/tvos/DerivedData/
+/tvos/generated/
+/tvos/private/
+*.app/
+*.ipa
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+*.dSYM.zip
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.cer
