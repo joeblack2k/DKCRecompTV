@@ -183,6 +183,7 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
   NSString *saveDirectoryPath_;
   NSString *saveFilePath_;
   NSString *saveDefaultsKey_;
+  NSData *lastMirroredSram_;
   std::string saveDirectoryUTF8_;
   std::vector<uint8_t> framebuffer_;
   std::shared_ptr<DKCAudioRing> audioRing_;
@@ -200,6 +201,7 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
   bool loggedFirstAudio_;
   bool loggedAudioOverrun_;
   uint16_t remoteMask_;
+  uint16_t remotePressedMask_;
 }
 
 - (void)pauseForLifecycle;
@@ -704,9 +706,9 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
       DkcSampleForGamepad(selected[0] ? selected[0].extendedGamepad : nil),
       DkcSampleForGamepad(selected[1] ? selected[1].extendedGamepad : nil),
   };
-  uint32_t mask = dkc_pack_controllers(samples, 2);
-  if (!selected[0])
-    mask |= remoteMask_;
+  const uint32_t mask =
+      dkc_pack_controllers(samples, 2) | remoteMask_ | remotePressedMask_;
+  remotePressedMask_ = 0;
   return mask;
 }
 
@@ -728,6 +730,7 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
   for (UIPress *press in presses) {
     const uint16_t mask = DkcMaskForPressType(press.type);
     remoteMask_ |= mask;
+    remotePressedMask_ |= mask;
     handled = handled || mask != 0;
   }
   if (!handled)
@@ -847,11 +850,15 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
           fileError.localizedDescription ?: @"save.srm is empty");
     return;
   }
+  if ([sram isEqualToData:lastMirroredSram_])
+    return;
 
   NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
   [defaults setObject:sram forKey:saveDefaultsKey_];
   const BOOL flushed = [defaults synchronize];
-  if (!flushed)
+  if (flushed)
+    lastMirroredSram_ = [sram copy];
+  else
     NSLog(@"DKCRecompTV SRAM preferences flush failed core=%s",
           info_->id ?: "unknown");
   std::fprintf(stderr,
