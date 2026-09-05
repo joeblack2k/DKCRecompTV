@@ -40,6 +40,8 @@ option(DKC2_BUILD_TVOS_CORE
     "Build the SDL-free DKC2 game core for Apple tvOS" OFF)
 option(DKC3_BUILD_TVOS_CORE
     "Build the SDL-free DKC3 game core for Apple tvOS" OFF)
+option(DKC1_BUILD_TVOS_CORE
+    "Build the SDL-free DKC1 game core for Apple tvOS" OFF)
 option(DKC2_FETCH_SDL2
     "Fetch the pinned SDL2 source when no system package is available" ON)
 if(DKC2_BUILD_SNESRECOMP_HEADLESS)
@@ -598,7 +600,7 @@ if(DKC2_BUILD_SNESRECOMP)
     endif()
 endif()
 
-if(DKC2_BUILD_TVOS_CORE OR DKC3_BUILD_TVOS_CORE)
+if(DKC1_BUILD_TVOS_CORE OR DKC2_BUILD_TVOS_CORE OR DKC3_BUILD_TVOS_CORE)
     if(NOT DEFINED SNESRECOMP_ROOT)
         set(SNESRECOMP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp)
     endif()
@@ -750,6 +752,61 @@ if(DKC3_BUILD_TVOS_CORE)
     dkc2_enable_release_optimization(dkc3_tvos_core)
 endif()
 
+if(DKC1_BUILD_TVOS_CORE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+        message(FATAL_ERROR
+            "DKC1_BUILD_TVOS_CORE requires CMAKE_SYSTEM_NAME=tvOS")
+    endif()
+    if(NOT DEFINED SNESRECOMP_ROOT)
+        set(SNESRECOMP_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp)
+    endif()
+    set(DKC1_SNESRECOMP_GEN_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/generated/dkc1/snesrecomp" CACHE PATH
+        "Directory containing private generated DKC1 snesrecomp C sources")
+    if(NOT EXISTS "${SNESRECOMP_ROOT}/runner/runner.cmake")
+        message(FATAL_ERROR
+            "snesrecomp is not initialized; run git submodule update --init --recursive")
+    endif()
+    include(${SNESRECOMP_ROOT}/runner/runner.cmake)
+    file(GLOB DKC1_TVOS_CORE_GEN_SOURCES CONFIGURE_DEPENDS
+        "${DKC1_SNESRECOMP_GEN_DIR}/*.c")
+    if(NOT DKC1_TVOS_CORE_GEN_SOURCES)
+        message(FATAL_ERROR
+            "No private DKC1 generated sources found; run "
+            "scripts/generate_title_snesrecomp.py --title dkc1")
+    endif()
+    if(NOT EXISTS "${DKC1_SNESRECOMP_GEN_DIR}/dkc_compiled_rom.c")
+        message(FATAL_ERROR
+            "Generated DKC1 sources are missing dkc_compiled_rom.c")
+    endif()
+
+    add_library(dkc1_tvos_core STATIC
+        ${DKC_TVOS_RUNTIME_SOURCES}
+        ${DKC1_TVOS_CORE_GEN_SOURCES}
+        runner/dkc_generic_game.c
+        runner/headless_host.c
+        titles/dkc1/tvos_video.c
+        tvos/core/dkc1_game_core.c)
+    target_include_directories(dkc1_tvos_core
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/tvos/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/runner
+            ${CMAKE_CURRENT_SOURCE_DIR}/titles/dkc1/recomp
+            ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
+    target_compile_definitions(dkc1_tvos_core PRIVATE
+        DKC_TITLE_ID="dkc1"
+        DKC_SAVE_PREFIX="dkc1s"
+        SNESRECOMP_TRACE=0
+        SNESRECOMP_REVERSE_DEBUG=0
+        SNESRECOMP_EXTERNAL_RAM_ROUTINE_GUARDS=1
+        SYSTEM_VOLUME_MIXER_AVAILABLE=0)
+    target_link_libraries(dkc1_tvos_core PRIVATE
+        ${SNESRECOMP_RUNNER_LIBRARIES})
+    dkc2_enable_project_warnings(dkc1_tvos_core)
+    dkc2_enable_release_optimization(dkc1_tvos_core)
+endif()
+
 if(BUILD_TESTING)
     if(NOT DEFINED SNESRECOMP_ROOT)
         set(SNESRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp")
@@ -774,6 +831,17 @@ if(BUILD_TESTING)
     dkc2_enable_project_warnings(test_dkc3_tvos_video)
     add_test(NAME dkc3_tvos_video COMMAND test_dkc3_tvos_video)
     set_tests_properties(dkc3_tvos_video PROPERTIES
+        LABELS "unit;portable;tvos;widescreen")
+
+    add_executable(test_dkc1_tvos_video
+        tests/test_dkc1_tvos_video.c
+        titles/dkc1/tvos_video.c)
+    target_include_directories(test_dkc1_tvos_video PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner
+        ${SNESRECOMP_ROOT}/runner/src)
+    dkc2_enable_project_warnings(test_dkc1_tvos_video)
+    add_test(NAME dkc1_tvos_video COMMAND test_dkc1_tvos_video)
+    set_tests_properties(dkc1_tvos_video PROPERTIES
         LABELS "unit;portable;tvos;widescreen")
 
     add_executable(test_verified_rom

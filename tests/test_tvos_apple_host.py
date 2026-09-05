@@ -260,11 +260,21 @@ class TvOSAppleHostTests(unittest.TestCase):
             "GCControllerDidDisconnectNotification",
             "DkcMaskForPressType",
             "UIPressTypeSelect",
+            "UIPressTypeMenu",
             "UIPressTypePlayPause",
             "pressesBegan",
             "pressesEnded",
+            "pressesCancelled",
             "remoteMask_",
             "remotePressedMask_",
+            "remoteSelectBeganAt_",
+            "event.timestamp - remoteSelectBeganAt_",
+            "held >= 0.5 ? DKC_SNES_BUTTON_A",
+            "UITapGestureRecognizer",
+            "allowedPressTypes",
+            "@(UIPressTypeMenu)",
+            "@(UIPressTypePlayPause)",
+            "remoteStartGesture:",
             "canBecomeFirstResponder",
             "becomeFirstResponder",
             "[GCController controllers]",
@@ -288,6 +298,11 @@ class TvOSAppleHostTests(unittest.TestCase):
             "const uint32_t controllerMask = [self controllerMaskForFrame]",
         ):
             self.assertIn(required, self.host)
+        cancelled = self.host.split("- (void)pressesCancelled:", 1)[1]
+        self.assertIn(
+            "remotePressedMask_ &= static_cast<uint16_t>(~mask);",
+            cancelled,
+        )
         self.assertNotIn(
             "if (!selected[0])\n    mask |= remoteMask_",
             self.host,

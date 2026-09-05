@@ -15,6 +15,11 @@ import tempfile
 
 EXPECTED_SIZE = 0x400000
 TITLES = {
+    "dkc1": {
+        "header": b"DONKEY KONG COUNTRY",
+        "config": "titles/dkc1/recomp",
+        "output": "generated/dkc1/snesrecomp",
+    },
     "dkc3": {
         "header": b"DONKEY KONG COUNTRY 3",
         "config": "titles/dkc3/recomp",

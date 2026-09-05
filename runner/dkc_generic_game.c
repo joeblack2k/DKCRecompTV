@@ -190,6 +190,8 @@ void DkcGenericDrawPpuFrame(void) {
   }
   const uint8_t repeat_layers =
       wide_layers ? (uint8_t)(visible_layers & ~wide_layers & 7u) : 0u;
+  const int presentation_bias =
+      wide_layers ? DkcTitleVideoPresentationBias(g_ram, kWidescreenExtra) : 0;
 
   for (int y = 0; y < kHeight; y++) {
     memset(g_ppu->renderBuffer + (size_t)y * g_ppu->renderPitch, 0,
@@ -203,7 +205,7 @@ void DkcGenericDrawPpuFrame(void) {
   PpuSetWidescreenLayerRepeat(g_ppu, repeat_layers);
   PpuSetWidescreenLayerClamp(g_ppu, 0);
   PpuSetWidescreenBg3Widen(g_ppu, (wide_layers & 4u) ? 1u : 0u);
-  PpuSetWidescreenPresentationXBias(g_ppu, 0);
+  PpuSetWidescreenPresentationXBias(g_ppu, presentation_bias);
 
   dma_startDma(g_dma, g_snesrecomp_last_hdmaen, true);
   for (int channel = 0; channel < 8; channel++) {
@@ -212,7 +214,17 @@ void DkcGenericDrawPpuFrame(void) {
       SimpleHdma_Init(&channels[channel], &g_dma->channel[channel]);
   }
   for (int line = 0; line <= kHeight; line++) {
+    if (presentation_bias != 0) {
+      for (unsigned layer = 0; layer < 4; layer++)
+        g_ppu->hScroll[layer] =
+            (uint16_t)(g_ppu->hScroll[layer] + presentation_bias);
+    }
     ppu_runLine(g_ppu, line);
+    if (presentation_bias != 0) {
+      for (unsigned layer = 0; layer < 4; layer++)
+        g_ppu->hScroll[layer] =
+            (uint16_t)(g_ppu->hScroll[layer] - presentation_bias);
+    }
     for (int channel = 0; channel < 8; channel++) {
       if (active[channel])
         SimpleHdma_DoLine(&channels[channel]);

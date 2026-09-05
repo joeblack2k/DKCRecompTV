@@ -148,6 +148,8 @@ class TvOSBuildToolingTests(unittest.TestCase):
             "Foundation",
         ):
             self.assertIn(f"/${{framework}}", self.audit)
+        self.assertIn('-path "$app_path/private/*"', self.audit)
+        self.assertNotIn("-path '*/private/*'", self.audit)
         self.assertNotIn("codesign --verify", self.audit)
 
     def test_stage_uses_non_destructive_app_data_copy_and_readback(self):

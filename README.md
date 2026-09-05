@@ -87,10 +87,34 @@ selection, launcher settings, SRAM, save states, and diagnostics under
 `~/Library/Application Support/Flat2VR/DKC2Recomp`. The private ROM remains at
 its original path and is never copied into the application bundle.
 
-## Supported ROM
+### Native tvOS source builds
 
-The launcher and runtime verify the ROM after removing an optional 512-byte
-copier header.
+The repository also builds DKC2, DKC3, and DKC1 as separate native tvOS apps.
+They share one UIKit, Metal, AVAudioEngine, and GameController host plus a
+small C game-core ABI. DKC1 and DKC3 additionally share the generic SNES
+runtime, so a title adapter contains only game metadata, save identity, and
+widescreen policy.
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode-27-beta-5.app/Contents/Developer
+./scripts/tvos/build-app.sh "/private/path/DKC2.sfc" appletvos
+./scripts/tvos/build-title-app.sh dkc3 "/private/path/DKC3.sfc" appletvos
+./scripts/tvos/build-title-app.sh dkc1 "/private/path/DKC1.sfc" appletvos
+```
+
+The 342x224 output uses the SNES 7:6 pixel aspect ratio for 16:9 presentation.
+Gameplay renders additional world columns where the title exposes safe
+tilemap data; menus remain centered and are never stretched. ROMs, generated
+game code, signed apps, saves, and captures remain private and ignored. See
+[`docs/TVOS.md`](docs/TVOS.md) for auditing, installation, staging, and Siri
+Remote controls.
+
+## Legacy DKC2 desktop launcher ROM
+
+This exact-dump check belongs only to the existing DKC2 desktop launcher. The
+native tvOS source builds described above do not use a ROM revision allowlist.
+The desktop launcher and runtime verify the ROM after removing an optional
+512-byte copier header.
 
 | Property | Expected value |
 | --- | --- |

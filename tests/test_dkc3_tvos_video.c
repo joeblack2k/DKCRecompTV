@@ -16,7 +16,10 @@ static int CheckLevel(uint16_t level, bool expected) {
 }
 
 int main(void) {
-  return CheckLevel(0x0000, false) ||
+  uint8_t wram[0x20000];
+  memset(wram, 0, sizeof wram);
+  return DkcTitleVideoPresentationBias(wram, 43) != 0 ||
+         CheckLevel(0x0000, false) ||
          CheckLevel(0x001d, true) ||
          CheckLevel(0x0028, true) ||
          CheckLevel(0x004d, false) ||

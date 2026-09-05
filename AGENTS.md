@@ -2,16 +2,16 @@
 
 ## Purpose
 
-Build a source-only native PC port foundation for the headerless North
-American v1.0 SNES release of *Donkey Kong Country 2*. Preserve correctness
-evidence and make every milestone reproducible.
+Build a source-only native port foundation for the Donkey Kong Country SNES
+trilogy, with DKC2 first, DKC3 second, and DKC1 third. Preserve correctness
+evidence and make every desktop and tvOS milestone reproducible.
 
 ## Content boundary
 
 - Never add ROMs, save files, extracted graphics, music, BRR samples, level
   data, screenshots, or generated game binaries to the repository.
-- The private ROM must remain outside Git. Its expected SHA-256 is
-  `35421a9af9dd011b40b91f792192af9f99c93201d8d394026bdfb42cbf2d8633`.
+- Every private ROM and its generated recompilation output must remain outside
+  Git. Do not turn a ROM revision into a repository-wide compatibility policy.
 - Treat research projects without an explicit compatible license as
   references only. Do not copy their code, comments, or bundled assets.
 - Record third-party source provenance, exact revision, local adaptations,
