@@ -264,6 +264,7 @@ class TvOSAppleHostTests(unittest.TestCase):
             "pressesBegan",
             "pressesEnded",
             "remoteMask_",
+            "remotePressedMask_",
             "canBecomeFirstResponder",
             "becomeFirstResponder",
             "[GCController controllers]",
@@ -280,9 +281,21 @@ class TvOSAppleHostTests(unittest.TestCase):
             "buttonMenu",
             "buttonOptions",
             "dkc_pack_controllers(samples, 2)",
+            "const uint32_t mask =",
+            "dkc_pack_controllers(samples, 2) | remoteMask_ | remotePressedMask_",
+            "remotePressedMask_ |= mask",
+            "remotePressedMask_ = 0",
             "const uint32_t controllerMask = [self controllerMaskForFrame]",
         ):
             self.assertIn(required, self.host)
+        self.assertNotIn(
+            "if (!selected[0])\n    mask |= remoteMask_",
+            self.host,
+        )
+        self.assertNotIn(
+            "const uint16_t mask =\n      dkc_pack_controllers",
+            self.host,
+        )
         self.assertEqual(self.host.count("controllerMaskForFrame"), 3)
 
     def test_shader_is_precompiled_nearest_sampled(self):
@@ -312,6 +325,18 @@ class TvOSAppleHostTests(unittest.TestCase):
             "first active video",
         ):
             self.assertIn(required, self.host)
+
+    def test_sram_mirror_skips_unchanged_payloads(self):
+        for required in (
+            "NSData *lastMirroredSram_",
+            "[sram isEqualToData:lastMirroredSram_]",
+            "lastMirroredSram_ = [sram copy]",
+        ):
+            self.assertIn(required, self.host)
+        self.assertLess(
+            self.host.index("[sram isEqualToData:lastMirroredSram_]"),
+            self.host.index("[defaults setObject:sram forKey:saveDefaultsKey_]"),
+        )
 
     def test_plists_are_minimal_tvOS_metadata(self):
         with INFO.open("rb") as stream:
