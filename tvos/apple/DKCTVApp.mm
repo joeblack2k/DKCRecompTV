@@ -153,8 +153,6 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
     return DKC_SNES_BUTTON_LEFT;
   case UIPressTypeRightArrow:
     return DKC_SNES_BUTTON_RIGHT;
-  case UIPressTypeSelect:
-    return DKC_SNES_BUTTON_B;
   case UIPressTypePlayPause:
     return DKC_SNES_BUTTON_START;
   default:
@@ -202,6 +200,7 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
   bool loggedAudioOverrun_;
   uint16_t remoteMask_;
   uint16_t remotePressedMask_;
+  NSTimeInterval remoteSelectBeganAt_;
 }
 
 - (void)pauseForLifecycle;
@@ -216,6 +215,7 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
 - (uint32_t)controllerMaskForFrame;
 - (void)controllerDidConnect:(NSNotification *)notification;
 - (void)controllerDidDisconnect:(NSNotification *)notification;
+- (void)remoteStartGesture:(UITapGestureRecognizer *)recognizer;
 @end
 
 @implementation DKCGameViewController
@@ -233,6 +233,12 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
                          selector:@selector(controllerDidDisconnect:)
                              name:GCControllerDidDisconnectNotification
                            object:nil];
+  UITapGestureRecognizer *startGesture =
+      [[UITapGestureRecognizer alloc] initWithTarget:self
+                                              action:@selector(remoteStartGesture:)];
+  startGesture.allowedPressTypes =
+      @[ @(UIPressTypeMenu), @(UIPressTypePlayPause) ];
+  [self.view addGestureRecognizer:startGesture];
   [self boot];
 }
 
@@ -724,10 +730,24 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
         controller.extendedGamepad ? "ExtendedGamepad" : "unsupported");
 }
 
+- (void)remoteStartGesture:(UITapGestureRecognizer *)recognizer {
+  if (recognizer.state == UIGestureRecognizerStateEnded)
+    remotePressedMask_ |= DKC_SNES_BUTTON_START;
+}
+
 - (void)pressesBegan:(NSSet<UIPress *> *)presses
            withEvent:(UIPressesEvent *)event {
   bool handled = false;
   for (UIPress *press in presses) {
+    if (press.type == UIPressTypeSelect) {
+      remoteSelectBeganAt_ = event.timestamp;
+      handled = true;
+      continue;
+    }
+    if (press.type == UIPressTypeMenu) {
+      handled = true;
+      continue;
+    }
     const uint16_t mask = DkcMaskForPressType(press.type);
     remoteMask_ |= mask;
     remotePressedMask_ |= mask;
@@ -741,6 +761,19 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
            withEvent:(UIPressesEvent *)event {
   bool handled = false;
   for (UIPress *press in presses) {
+    if (press.type == UIPressTypeSelect) {
+      const NSTimeInterval held = event.timestamp - remoteSelectBeganAt_;
+      remotePressedMask_ |= held >= 0.5 ? DKC_SNES_BUTTON_A
+                                        : DKC_SNES_BUTTON_B;
+      remoteSelectBeganAt_ = 0.0;
+      handled = true;
+      continue;
+    }
+    if (press.type == UIPressTypeMenu) {
+      remotePressedMask_ |= DKC_SNES_BUTTON_START;
+      handled = true;
+      continue;
+    }
     const uint16_t mask = DkcMaskForPressType(press.type);
     remoteMask_ &= static_cast<uint16_t>(~mask);
     handled = handled || mask != 0;
@@ -751,7 +784,24 @@ static uint16_t DkcMaskForPressType(UIPressType type) {
 
 - (void)pressesCancelled:(NSSet<UIPress *> *)presses
                withEvent:(UIPressesEvent *)event {
-  [self pressesEnded:presses withEvent:event];
+  bool handled = false;
+  for (UIPress *press in presses) {
+    if (press.type == UIPressTypeSelect) {
+      remoteSelectBeganAt_ = 0.0;
+      handled = true;
+      continue;
+    }
+    if (press.type == UIPressTypeMenu) {
+      handled = true;
+      continue;
+    }
+    const uint16_t mask = DkcMaskForPressType(press.type);
+    remoteMask_ &= static_cast<uint16_t>(~mask);
+    remotePressedMask_ &= static_cast<uint16_t>(~mask);
+    handled = handled || mask != 0;
+  }
+  if (!handled)
+    [super pressesCancelled:presses withEvent:event];
 }
 
 - (void)uploadFramebuffer {

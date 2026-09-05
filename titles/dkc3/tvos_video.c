@@ -7,3 +7,9 @@ bool DkcTitleVideoCanWiden(const uint8_t *wram) {
     return false;
   return level < 0x004du || level > 0x004fu;
 }
+
+int DkcTitleVideoPresentationBias(const uint8_t *wram, int extra) {
+  (void)wram;
+  (void)extra;
+  return 0;
+}

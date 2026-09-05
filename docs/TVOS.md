@@ -1,57 +1,99 @@
-# Native tvOS preparation
+# Native tvOS builds
 
-## Milestone 1 boundary
+The tvOS port uses one shared Apple-native host for all three Donkey Kong
+Country games:
 
-This checkout remains source-only. A private ROM must stay outside the
-repository and is read only by the preflight. No ROM bytes, copier-header
-stripping, ROM conversion, downloads, generated game C, private build output,
-signing material, or team IDs belong in Git.
+- UIKit owns the application lifecycle.
+- Metal and MetalKit present the 342x224 BGRA framebuffer.
+- AVAudioEngine and AVAudioSession play 32,040 Hz stereo audio.
+- GameController provides two standard controller ports.
+- A small C ABI (`DKCGameCoreV2`) keeps title code independent from the host.
 
-The accepted game-data profiles are complete, headerless North American DKC2
-USA payloads with one of these exact size and SHA-256 identities:
+DKC1 and DKC3 share the generic SNES runtime and differ only in their title
+adapter, recompilation configuration, save prefix, and widescreen policy.
+DKC2 uses the same Apple host through its existing game-specific adapter.
 
-| Field | Required value |
-| --- | --- |
-| Size | `4194304` bytes |
-| USA v1.0 SHA-256 | `35421a9af9dd011b40b91f792192af9f99c93201d8d394026bdfb42cbf2d8633` |
-| USA Rev 1/v1.1 SHA-256 | `b79c2bb86f6fc76e1fc61c62fc16d51c664c381e58bc2933be643bbc4d8b610c` |
+The 342-pixel framebuffer is presented with the SNES 7:6 pixel aspect ratio,
+which yields native 16:9 at 224 lines. Gameplay can render the additional
+tilemap columns; menus and transitions that do not expose safe world data stay
+centered instead of being stretched.
 
-Other sizes or digests are not accepted. The Rev 1/v1.1 profile is a valid
-private input and remains outside the source tree.
+## Private data boundary
 
-## Reproducible preflight
+Keep every ROM, generated recompilation unit, save, screenshot, signing
+identity, provisioning profile, and signed application outside Git. The build
+scripts read the selected ROM and write generated C under ignored `generated/`
+directories. DKC1 and DKC3 accept a complete headerless ROM by size and
+internal title; the generated module records the exact input digest without
+using a revision allowlist.
 
-The script requires the exact beta-5 developer directory and never calls
-`xcode-select`:
+## Toolchain
+
+Initialize submodules and select the known Xcode installation:
 
 ```sh
+git submodule update --init --recursive
 export DEVELOPER_DIR=/Applications/Xcode-27-beta-5.app/Contents/Developer
 ./scripts/tvos/preflight.sh --toolchain-only
-./scripts/tvos/preflight.sh "/absolute/path/to/private/DKC2-USA-v1.0.sfc"
-DKC2_ROM="/absolute/path/to/private/DKC2-USA-Rev1.sfc" \
-  ./scripts/tvos/preflight.sh
 ```
 
-The current installation reports `Xcode 27.0`, build `27A5237l`, with tvOS
-and tvOS Simulator SDK `27.0`. `--toolchain-only` is the explicit successful
-path when no ROM is available. The normal path requires one external ROM
-argument or the `DKC2_ROM` environment variable. Either exact SHA-256 profile
-passes.
+The scripts use `xcrun` with `appletvos` or `appletvsimulator` directly and do
+not change the machine-wide `xcode-select` setting.
 
-The ROM path is rejected when it resolves inside this checkout. The read-only
-size and SHA-256 checks run on the original file; nothing is copied or
-rewritten.
+## Build
 
-## Boundary check
-
-Run the single focused test with the standard library:
+Build DKC2:
 
 ```sh
-python3 tests/test_tvos_preflight.py
+./scripts/tvos/build-app.sh "/absolute/path/to/private/DKC2.sfc" appletvos
 ```
 
-It covers the toolchain-only success, missing-ROM error, in-checkout path
-rejection, both known SHA-256 profiles, and the tracked-source/private-output
-scan without private ROM data.
-No tvOS target, signing setup, device install, or private build is part of
-this milestone.
+Build DKC3 or DKC1:
+
+```sh
+./scripts/tvos/build-title-app.sh dkc3 "/absolute/path/to/private/DKC3.sfc" appletvos
+./scripts/tvos/build-title-app.sh dkc1 "/absolute/path/to/private/DKC1.sfc" appletvos
+```
+
+Use `appletvsimulator` as the final argument for a simulator build. Every
+command prints the resulting `.app` path, bundle identifier, core function,
+and product name.
+
+Audit an unsigned build before adding a provisioning profile. For example:
+
+```sh
+DKC2_BUNDLE_ID=tv.nijssen.DKC1RecompTV \
+DKC2_PRODUCT_NAME="DKC1 Recomp TV" \
+  ./scripts/tvos/audit-app.sh \
+  tvos/build/app-xcode27-ninja-appletvos/DKC1RecompTV.app \
+  appletvos dkc1_game_core
+```
+
+The audit checks the Apple platform, arm64 architecture, minimum tvOS version,
+bundle metadata, selected core symbol, resources, and absence of private or
+generated game data.
+
+## Install and stage
+
+Sign the audited app with the local Apple Development identity and a matching
+provisioning profile, then install it with `xcrun devicectl device install
+app`. Stage the private ROM into the installed app's data container:
+
+```sh
+./scripts/tvos/stage-game.sh \
+  "/absolute/path/to/private/DKC1.sfc" DEVICE \
+  tv.nijssen.DKC1RecompTV dkc1
+```
+
+Use `tv.nijssen.DKC2RecompTV dkc2` or
+`tv.nijssen.DKC3RecompTV dkc3` for the other titles. The staging command copies
+the ROM to `Library/Caches/DKCRecompTV/<title>/Game.sfc`, reads it back from
+the device, and requires matching size, SHA-256, and bytes.
+
+## Controls
+
+Standard Apple-compatible game controllers map to both SNES controller ports.
+The Siri Remote fallback maps arrows to the D-pad, a short click to B, a click
+held for at least half a second to A, and Back/Menu or Play/Pause to Start.
+The Start buttons are claimed with native tvOS press gesture recognition so
+they do not depend on responder-chain timing.

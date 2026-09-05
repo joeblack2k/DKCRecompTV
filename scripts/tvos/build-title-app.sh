@@ -11,7 +11,7 @@ die() {
 }
 
 usage() {
-    printf 'Usage: DEVELOPER_DIR=%s %s dkc3 ROM_PATH [appletvos|appletvsimulator]\n' \
+    printf 'Usage: DEVELOPER_DIR=%s %s {dkc1|dkc3} ROM_PATH [appletvos|appletvsimulator]\n' \
         "$EXPECTED_DEVELOPER_DIR" "$0" >&2
 }
 
@@ -24,6 +24,14 @@ title=$1
 rom_path=$2
 sdk=${3:-appletvos}
 case "$title" in
+    dkc1)
+        core_target="dkc1_tvos_core"
+        core_function="dkc1_game_core"
+        build_option="DKC1_BUILD_TVOS_CORE"
+        bundle_id="tv.nijssen.DKC1RecompTV"
+        product_name="DKC1 Recomp TV"
+        executable_name="DKC1RecompTV"
+        ;;
     dkc3)
         core_target="dkc3_tvos_core"
         core_function="dkc3_game_core"

@@ -12,3 +12,4 @@ void DkcGenericDrawPpuFrame(void);
 
 /* Implemented once by each title adapter linked with the generic runner. */
 bool DkcTitleVideoCanWiden(const uint8_t *wram);
+int DkcTitleVideoPresentationBias(const uint8_t *wram, int extra);

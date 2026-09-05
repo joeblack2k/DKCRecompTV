@@ -183,8 +183,10 @@ artifact_paths=$(find "$app_path" -type f \( \
     -iname '*.metal' -o \
     -iname '*.h' -o \
     -iname '*.hpp' -o \
-    -path '*/generated/*' -o \
-    -path '*/private/*' \
+    -path "$app_path/generated/*" -o \
+    -path "$app_path/*/generated/*" -o \
+    -path "$app_path/private/*" -o \
+    -path "$app_path/*/private/*" \
     \) -print)
 [ -z "$artifact_paths" ] ||
     die 4 "source or private ROM artifact is inside the app bundle"
